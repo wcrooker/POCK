@@ -9,7 +9,6 @@
 #pragma comment(lib, "wininet.lib")
 #pragma comment(lib, "bcrypt.lib")
 #pragma comment(lib, "psapi.lib")
-#pragma comment(lib, "user32.lib")
 
 // Forward declarations
 int DL();
@@ -217,9 +216,6 @@ int main() {
     printf("[*] Payload type: %s\n", payload_type);
     printf("[*] Encryption algorithm: %s\n", enc_algo);
     if (wcslen(IP) > 0) printf("[*] FTP staging enabled: %ls\n", IP);
-
-    MessageBoxA(NULL, "Thanks for playing!", "MyPacker", MB_OK | MB_ICONINFORMATION);
-    printf("[*] MessageBox shown.\n");
 
     Sleep(10000);
     printf("[*] Post splash delay complete.\n");
