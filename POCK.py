@@ -7,7 +7,6 @@ from urllib.parse import urlparse
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
-
 def ascii():
     art = r"""
   ____   ___   ____ _  __
@@ -22,6 +21,7 @@ def ascii():
  By wcrooker                                  v1.2
 """
     print(art)
+
 
 def xor_encrypt(data, key):
     key_bytes = key.encode()
