@@ -52,7 +52,8 @@ Usage:
 ```bash
 python3 POCK.py -i <input_file> -o <output_file> -e <encryption> -k <key> -t <payload_type> [options]
 ```
-##Required Arguments
+Required Arguments
+
 -i, --input
 ##Path to raw shellcode (.bin) or DLL (.dll) file
 
