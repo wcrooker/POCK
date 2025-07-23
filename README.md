@@ -57,7 +57,7 @@ python3 POCK.py -i <input_file> -o <output_file> -e <encryption> -k <key> -t <pa
 
 ---
 
-**### Required Arguments**
+**Required Arguments**
 
 **-i, --input**  
 **Path to raw shellcode (.bin) or DLL (.dll) file**
@@ -76,34 +76,34 @@ python3 POCK.py -i <input_file> -o <output_file> -e <encryption> -k <key> -t <pa
 
 ---
 
-**### Optional Arguments**
+**Optional Arguments**
 
 **--inject <method>**  
-**Injection method: apc, earlybird, fiber**
+Injection method: apc, earlybird, fiber
 
 **--url <ftp_url>**  
-**FTP URL for remote payload staging**
+FTP URL for remote payload staging
 
 **--ftp-user <username>**  
-**FTP username for authentication**
+FTP username for authentication
 
 **--ftp-pass <password>**  
-**FTP password for authentication**
+FTP password for authentication
 
 **--entropy**  
-**Add entropy-based execution delay**
+Add entropy-based execution delay
 
 **--fibonacci**  
-**Add Fibonacci loop delay**
+Add Fibonacci loop delay
 
 **--factorial**  
-**Add factorial computation delay**
+Add factorial computation delay
 
 **--sleep <seconds>**  
-**Sleep for specified seconds before executing**
+Sleep for specified seconds before executing
 
 **--hide**  
-**Compile stub as a hidden (GUI) executable instead of console**
+Compile stub as a hidden (GUI) executable instead of console
 
 ---
 
