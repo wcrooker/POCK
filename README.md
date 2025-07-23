@@ -43,6 +43,8 @@ POCK supports:
 - [jinja2](https://pypi.org/project/Jinja2/)
 - MinGW-w64 cross-compiler (e.g. `x86_64-w64-mingw32-gcc`)
 
+---
+
 ### Install Python dependencies:
 
 ```bash
@@ -55,12 +57,14 @@ python3 POCK.py -i <input_file> -o <output_file> -e <encryption> -k <key> -t <pa
 
 ---
 
-##Required Arguments
+###Required Arguments
 
 -i, --input
+
 ##Path to raw shellcode (.bin) or DLL (.dll) file
 
 -o, --output
+
 ##Name of the compiled output executable
 
 -e, --encryption
