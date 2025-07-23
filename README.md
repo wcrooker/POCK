@@ -60,19 +60,19 @@ python3 POCK.py -i <input_file> -o <output_file> -e <encryption> -k <key> -t <pa
 **Required Arguments**
 
 **-i, --input**  
-**Path to raw shellcode (.bin) or DLL (.dll) file**
+Path to raw shellcode (.bin) or DLL (.dll) file
 
 **-o, --output**  
-**Name of the compiled output executable**
+Name of the compiled output executable
 
 **-e, --encryption**  
-**Encryption method to use: aes or xor**
+Encryption method to use: aes or xor
 
 **-k, --key**  
-**Key to encrypt the payload**
+Key to encrypt the payload
 
 **-t, --type**  
-**Payload type: shellcode or dll**
+Payload type: shellcode or dll
 
 ---
 
