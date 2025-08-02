@@ -1,6 +1,5 @@
 # POCK - Polymorphic Obfuscation and Crypter Kit
-
-**“UnPACKable payloads start here!”**  
+  
 A customizable binary packer designed for red teamers, malware researchers, and offensive security professionals.
 
 ---
