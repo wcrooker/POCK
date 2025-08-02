@@ -17,7 +17,6 @@ def ascii():
  
         *PACKER*
  
- “UnPACKable payloads start here!”
  By wcrooker                                  v1.2
 """
     print(art)
